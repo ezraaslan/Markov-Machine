@@ -7,4 +7,4 @@ Run the program interactively:
 ```bash
 git clone https://github.com/ezraaslan/markov-machine.git
 cd markov-machine
-python demo.py
+python Markov_Machine.py
