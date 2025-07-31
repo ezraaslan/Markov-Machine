@@ -8,3 +8,6 @@ Run the program interactively:
 git clone https://github.com/ezraaslan/markov-machine.git
 cd markov-machine
 python Markov_Machine.py
+
+```
+Or download Markov_Machine.py and run the code in VS Code or another platform.
