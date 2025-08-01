@@ -93,8 +93,17 @@
 # if __name__ == "__main__":
 #     main()
 
+
+
+
+
+
 from collections import defaultdict, Counter
 import random
+
+import requests
+from bs4 import BeautifulSoup
+
 
 def build_ngram_chart(corpus, state_size=2):
     words = corpus.split()
@@ -117,7 +126,7 @@ def generate_from_chart(chart, state_size, min_words=50):
 
     def get_starter():
         starters = [s for s in chart.keys() 
-            if s[0][0].isupper() and not any(p in s[0] for p in ".!?") and s[-1].endswith(('.', '!', '?'))]
+            if s[0][0].isupper() and not any(p in s[0] for p in ".!?")]
         return random.choice(starters)
     
     state = get_starter()
@@ -153,7 +162,33 @@ def generate_from_chart(chart, state_size, min_words=50):
     return " ".join(output)
 
 def main():
-    corpus = input("Enter training text: ")
+    def scrape_text(url):
+        response = requests.get(url)
+        if response.status_code != 200:
+            print(f"Failed to retrieve {url}")
+            return ""
+
+        soup = BeautifulSoup(response.text, 'lxml')
+
+        for script in soup(["script", "style", "noscript"]):
+            script.extract()
+        paragraphs = soup.find_all(['p', 'h1', 'h2', 'h3'])
+        text = ' '.join(p.get_text() for p in paragraphs)
+
+        return text
+    url = "https://en.wikipedia.org/wiki/Markov_chain"
+    scraped_text = scrape_text(url)
+    limit = 2000
+    if len(scraped_text) > limit:
+        end_index = limit
+        while end_index < len(scraped_text) and scraped_text[end_index] not in ".!?":
+            end_index += 1
+        if end_index < len(scraped_text):
+            end_index += 1
+        source = scraped_text[:end_index]
+    else:
+        source = scraped_text
+    corpus = source
     state_size = int(input("Enter state size (try 1-4): "))
     min_words = int(input("Enter min words to generate: "))
 
