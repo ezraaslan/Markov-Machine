@@ -104,6 +104,53 @@ import random
 import requests
 from bs4 import BeautifulSoup
 
+import nltk
+from nltk.corpus import wordnet
+
+
+def pluralize(og, new):
+    if og.endswith("s"):
+        return new + "s"
+    else:
+        return new
+
+def get_synonym(word, pos=None):
+    synonyms = []
+    for syn in wordnet.synsets(word, pos=pos):
+        for lemma in syn.lemmas():
+            name = lemma.name().replace('_', ' ')
+            if name.lower() != word.lower():
+                synonyms.append(name)
+    if not synonyms:
+        return word
+    
+    new = random.choice(synonyms)
+    return pluralize(word, new) 
+
+
+def get_pos(tag):
+    if tag.startswith("J"):
+        return wordnet.ADJ
+    elif tag.startswith("N"):
+        return wordnet.NOUN
+    elif tag.startswith("V"):
+        return wordnet.VERB
+    else:
+        return None
+
+def replace(words):
+    tagged = nltk.pos_tag(words)
+
+    new_words = []
+    for word, tag in tagged:
+        wn_pos = get_pos(tag)
+        if wn_pos in [wordnet.NOUN, wordnet.VERB, wordnet.ADJ]:
+            if random.random() < .5:
+                word = get_synonym(word, wn_pos)
+        new_words.append(word)
+    
+    return ' '.join(new_words)
+
 
 def build_ngram_chart(corpus, state_size=2):
     words = corpus.split()
@@ -173,28 +220,32 @@ def main():
         for script in soup(["script", "style", "noscript"]):
             script.extract()
         paragraphs = soup.find_all(['p', 'h1', 'h2', 'h3'])
-        text = ' '.join(p.get_text() for p in paragraphs)
+        text_parts = []
+        char_count = 0
+        for p in paragraphs:
+            data = p.get_text()
+            text_parts.append(data)
+            char_count += len(data)
+            if char_count > 5000: 
+                break
+        text = ' '.join(text_parts)
+
 
         return text
     url = "https://en.wikipedia.org/wiki/Markov_chain"
     scraped_text = scrape_text(url)
-    limit = 2000
-    if len(scraped_text) > limit:
-        end_index = limit
-        while end_index < len(scraped_text) and scraped_text[end_index] not in ".!?":
-            end_index += 1
-        if end_index < len(scraped_text):
-            end_index += 1
-        source = scraped_text[:end_index]
-    else:
-        source = scraped_text
-    corpus = source
+    
+    corpus = scraped_text
     state_size = int(input("Enter state size (try 1-4): "))
     min_words = int(input("Enter min words to generate: "))
 
     chart = build_ngram_chart(corpus, state_size)
     generated = generate_from_chart(chart, state_size, min_words)
-    print("Generated text:\n" + generated)
+    words = generated.split(" ")
+
+    new = replace(words)
+
+    print(new)
 
 if __name__ == "__main__":
     main()
