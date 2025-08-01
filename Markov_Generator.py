@@ -111,38 +111,54 @@ def build_ngram_chart(corpus, state_size=2):
     for state, counter in transitions.items():
         total = sum(counter.values())
         chart[state] = {word: count / total for word, count in counter.items()}
-
     return chart
 
-def generate_from_chart(chart, state_size, max_words=50):
+def generate_from_chart(chart, state_size, min_words=50):
 
     def get_starter():
         starters = [s for s in chart.keys() 
-            if s[0][0].isupper() and not any(p in s[0] for p in ".!?")]
+            if s[0][0].isupper() and not any(p in s[0] for p in ".!?") and s[-1].endswith(('.', '!', '?'))]
         return random.choice(starters)
     
     state = get_starter()
     output = list(state)
 
-    for _ in range(max_words - state_size):
+    i = 1
+    while i < min_words:
         next_probs = chart.get(state)
-        if not next_probs:
-            break
+        if not next_probs: 
+            state = random.choice(list(chart.keys()))
+            next_probs = chart[state]
         words = list(next_probs.keys())
         probs = list(next_probs.values())
         next_word = random.choices(words, weights=probs, k=1)[0]
         output.append(next_word)
         state = tuple(output[-state_size:])
 
+        i += 1
+    if i >= min_words:
+        if not output[-1].endswith(('.', '!', '?')):
+            next_word = ''
+            while not next_word.endswith(".") and not next_word.endswith("!") and not next_word.endswith("?"):
+                next_probs = chart.get(state)
+                if not next_probs:  # fallback if state not in chart
+                    state = random.choice(list(chart.keys()))
+                    next_probs = chart[state]
+                words = list(next_probs.keys())
+                probs = list(next_probs.values())
+                next_word = random.choices(words, weights=probs, k=1)[0]
+                output.append(next_word)
+                state = tuple(output[-state_size:])
+            
     return " ".join(output)
 
 def main():
     corpus = input("Enter training text: ")
     state_size = int(input("Enter state size (try 1-4): "))
-    max_words = int(input("Enter max words to generate: "))
+    min_words = int(input("Enter min words to generate: "))
 
     chart = build_ngram_chart(corpus, state_size)
-    generated = generate_from_chart(chart, state_size, max_words)
+    generated = generate_from_chart(chart, state_size, min_words)
     print("Generated text:\n" + generated)
 
 if __name__ == "__main__":
