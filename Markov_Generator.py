@@ -109,10 +109,16 @@ from nltk.corpus import wordnet
 
 
 def pluralize(og, new):
-    if og.endswith("s"):
-        return new + "s"
-    else:
+    if og == "is":
         return new
+    if og.isupper():
+        new = new.capitalize()
+    if og.endswith("y"):
+        return new[:-1] + "ies" if new.endswith("y") else new + "s"
+    elif og.endswith("s"):
+        return new + "s"
+    return new
+
 
 def get_synonym(word, pos=None):
     synonyms = []
@@ -139,17 +145,20 @@ def get_pos(tag):
         return None
 
 def replace(words):
-    tagged = nltk.pos_tag(words)
+    if isinstance(words, str):
+        words = words.split()
 
+    tagged = nltk.pos_tag(words)
     new_words = []
     for word, tag in tagged:
         wn_pos = get_pos(tag)
         if wn_pos in [wordnet.NOUN, wordnet.VERB, wordnet.ADJ]:
-            if random.random() < .5:
+            if random.random() < 0.5:
                 word = get_synonym(word, wn_pos)
         new_words.append(word)
     
-    return ' '.join(new_words)
+    return ' '.join(new_words) if new_words else ' '.join(words)
+
 
 
 def build_ngram_chart(corpus, state_size=2):
