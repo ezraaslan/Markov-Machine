@@ -100,23 +100,21 @@
 
 from collections import defaultdict, Counter
 import random
-
 import requests
 from bs4 import BeautifulSoup
-
 import nltk
 from nltk.corpus import wordnet
-
+import urllib.parse
 
 def pluralize(og, new):
     if og == "is":
         return new
     if og.isupper():
         new = new.capitalize()
-    if og.endswith("y"):
-        return new[:-1] + "ies" if new.endswith("y") else new + "s"
+    if og.endswith("y") and not og.endswith(("ay","ey","iy","oy","uy")):
+        return new + "ies"
     elif og.endswith("s"):
-        return new + "s"
+        return new + "es"
     return new
 
 
@@ -129,7 +127,6 @@ def get_synonym(word, pos=None):
                 synonyms.append(name)
     if not synonyms:
         return word
-    
     new = random.choice(synonyms)
     return pluralize(word, new) 
 
@@ -141,8 +138,8 @@ def get_pos(tag):
         return wordnet.NOUN
     elif tag.startswith("V"):
         return wordnet.VERB
-    else:
-        return None
+    return None
+
 
 def replace(words):
     if isinstance(words, str):
@@ -151,6 +148,8 @@ def replace(words):
     tagged = nltk.pos_tag(words)
     new_words = []
     for word, tag in tagged:
+        if not word:
+            continue
         wn_pos = get_pos(tag)
         if wn_pos in [wordnet.NOUN, wordnet.VERB, wordnet.ADJ]:
             if random.random() < 0.5:
@@ -160,101 +159,108 @@ def replace(words):
     return ' '.join(new_words) if new_words else ' '.join(words)
 
 
-
 def build_ngram_chart(corpus, state_size=2):
     words = corpus.split()
     transitions = defaultdict(Counter)
-
-    
     for i in range(len(words) - state_size):
         state = tuple(words[i:i + state_size])
         next_word = words[i + state_size]
         transitions[state][next_word] += 1
+    return {state: {w: c / sum(counter.values()) for w, c in counter.items()}
+            for state, counter in transitions.items()}
 
-   
-    chart = {}
-    for state, counter in transitions.items():
-        total = sum(counter.values())
-        chart[state] = {word: count / total for word, count in counter.items()}
-    return chart
 
 def generate_from_chart(chart, state_size, min_words=50):
-
     def get_starter():
-        starters = [s for s in chart.keys() 
-            if s[0][0].isupper() and not any(p in s[0] for p in ".!?")]
+        starters = [s for s in chart.keys()
+                    if s[0][0].isupper() and not any(p in s[0] for p in ".!?")]
         return random.choice(starters)
-    
+
     state = get_starter()
     output = list(state)
 
-    i = 1
-    while i < min_words:
+    while len(output) < min_words:
         next_probs = chart.get(state)
-        if not next_probs: 
+        if not next_probs:
             state = random.choice(list(chart.keys()))
             next_probs = chart[state]
-        words = list(next_probs.keys())
-        probs = list(next_probs.values())
-        next_word = random.choices(words, weights=probs, k=1)[0]
+        next_word = random.choices(list(next_probs.keys()), weights=list(next_probs.values()), k=1)[0]
         output.append(next_word)
         state = tuple(output[-state_size:])
 
-        i += 1
-    if i >= min_words:
-        if not output[-1].endswith(('.', '!', '?')):
-            next_word = ''
-            while not next_word.endswith(".") and not next_word.endswith("!") and not next_word.endswith("?"):
-                next_probs = chart.get(state)
-                if not next_probs:  # fallback if state not in chart
-                    state = random.choice(list(chart.keys()))
-                    next_probs = chart[state]
-                words = list(next_probs.keys())
-                probs = list(next_probs.values())
-                next_word = random.choices(words, weights=probs, k=1)[0]
-                output.append(next_word)
-                state = tuple(output[-state_size:])
-            
+    # Ensure sentence ends properly
+    while not output[-1].endswith(('.', '!', '?')):
+        next_probs = chart.get(state) or random.choice(list(chart.values()))
+        next_word = random.choice(list(next_probs.keys()))
+        output.append(next_word)
+        state = tuple(output[-state_size:])
+
     return " ".join(output)
 
-def main():
-    def scrape_text(url):
-        response = requests.get(url)
-        if response.status_code != 200:
-            print(f"Failed to retrieve {url}")
-            return ""
 
-        soup = BeautifulSoup(response.text, 'lxml')
+def search(keywords, num=1):
+    url = "https://duckduckgo.com/html/"
+    params = {"q": keywords}
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, params=params, headers=headers)
+    soup = BeautifulSoup(response.text, "html.parser")
 
-        for script in soup(["script", "style", "noscript"]):
-            script.extract()
-        paragraphs = soup.find_all(['p', 'h1', 'h2', 'h3'])
-        text_parts = []
-        char_count = 0
-        for p in paragraphs:
-            data = p.get_text()
+    results = []
+    for a in soup.select("a.result__a")[:num]:
+        link = a.get("href")
+
+        if link.startswith("//"):
+            link = "https:" + link
+
+        if "uddg=" in link:
+            parsed = urllib.parse.urlparse(link)
+            query = urllib.parse.parse_qs(parsed.query)
+            if "uddg" in query:
+                link = urllib.parse.unquote(query["uddg"][0])
+
+        results.append(link)
+    return results
+
+
+def scrape_text(url):
+    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    if response.status_code != 200:
+        return ""
+    soup = BeautifulSoup(response.text, 'lxml')
+    for s in soup(["script", "style", "noscript"]):
+        s.extract()
+    text_parts, char_count = [], 0
+    for p in soup.find_all(['p', 'h1', 'h2', 'h3']):
+        data = p.get_text(strip=True)
+        if data:
             text_parts.append(data)
             char_count += len(data)
-            if char_count > 5000: 
+            if char_count > 5000:
                 break
-        text = ' '.join(text_parts)
+    return ' '.join(text_parts)
 
 
-        return text
-    url = "https://en.wikipedia.org/wiki/Markov_chain"
-    scraped_text = scrape_text(url)
-    
-    corpus = scraped_text
+def main():
+    keywords = input("Enter keywords to search for: ")
+    urls = search(keywords, num=1)
+    print(urls)
+    if not urls:
+        print("No results found.")
+        return
+
+    scraped_text = scrape_text(urls[0])
+    if not scraped_text.strip():
+        print("No text scraped.")
+        return
+
     state_size = int(input("Enter state size (try 1-4): "))
     min_words = int(input("Enter min words to generate: "))
 
-    chart = build_ngram_chart(corpus, state_size)
+    chart = build_ngram_chart(scraped_text, state_size)
     generated = generate_from_chart(chart, state_size, min_words)
-    words = generated.split(" ")
+    new_text = replace(generated.split(" "))
+    print("\n--- Generated Text ---\n", new_text)
 
-    new = replace(words)
-
-    print(new)
 
 if __name__ == "__main__":
     main()
