@@ -111,6 +111,8 @@ def pluralize(og, new):
         return new
     if og.isupper():
         new = new.capitalize()
+    if og.endswith("ed"):
+        new += "ed"
     if og.endswith("y") and not og.endswith(("ay","ey","iy","oy","uy")):
         return new + "ies"
     elif og.endswith("s"):
@@ -188,7 +190,6 @@ def generate_from_chart(chart, state_size, min_words=50):
         output.append(next_word)
         state = tuple(output[-state_size:])
 
-    # Ensure sentence ends properly
     while not output[-1].endswith(('.', '!', '?')):
         next_probs = chart.get(state) or random.choice(list(chart.values()))
         next_word = random.choice(list(next_probs.keys()))
@@ -198,7 +199,7 @@ def generate_from_chart(chart, state_size, min_words=50):
     return " ".join(output)
 
 
-def search(keywords, num=1):
+def search(keywords, num=5):
     url = "https://duckduckgo.com/html/"
     params = {"q": keywords}
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -223,32 +224,44 @@ def search(keywords, num=1):
 
 
 def scrape_text(url):
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    if response.status_code != 200:
+    try:
+        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if response.status_code != 200 or "text/html" not in response.headers.get("Content-Type", ""):
+            return "" 
+
+        response.encoding = response.apparent_encoding
+
+        soup = BeautifulSoup(response.text, 'lxml')
+
+        for s in soup(["script", "style", "noscript"]):
+            s.extract()
+
+        text_parts, char_count = [], 0
+        for p in soup.find_all(['p', 'h1', 'h2', 'h3']):
+            data = p.get_text(strip=True)
+            if data:
+                text_parts.append(data)
+                char_count += len(data)
+                if char_count > 1000: 
+                    break
+
+        return ' '.join(text_parts)
+    except Exception as e:
+        print(f"Error scraping {url}: {e}")
         return ""
-    soup = BeautifulSoup(response.text, 'lxml')
-    for s in soup(["script", "style", "noscript"]):
-        s.extract()
-    text_parts, char_count = [], 0
-    for p in soup.find_all(['p', 'h1', 'h2', 'h3']):
-        data = p.get_text(strip=True)
-        if data:
-            text_parts.append(data)
-            char_count += len(data)
-            if char_count > 5000:
-                break
-    return ' '.join(text_parts)
+
 
 
 def main():
-    keywords = input("Enter keywords to search for: ")
-    urls = search(keywords, num=1)
+    keywords = input("Enter search query: ")
+    urls = search(keywords, num=5)
     print(urls)
     if not urls:
         print("No results found.")
         return
-
-    scraped_text = scrape_text(urls[0])
+    scraped_text = ""
+    for i in range(len(urls)):
+        scraped_text += scrape_text(urls[i])
     if not scraped_text.strip():
         print("No text scraped.")
         return
