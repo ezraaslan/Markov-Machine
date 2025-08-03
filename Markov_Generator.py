@@ -236,6 +236,8 @@ def search(keywords, num=5):
     return results
 
 
+import re
+
 def scrape_text(url):
     try:
         response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
@@ -243,7 +245,6 @@ def scrape_text(url):
             return "" 
 
         response.encoding = response.apparent_encoding
-
         soup = BeautifulSoup(response.text, 'lxml')
 
         for s in soup(["script", "style", "noscript"]):
@@ -252,17 +253,21 @@ def scrape_text(url):
         text_parts, char_count = [], 0
         for p in soup.find_all(['p', 'h1', 'h2', 'h3']):
             data = p.get_text(strip=True)
-            if data:
-                text_parts.append(data)
-                char_count += len(data)
-                if char_count > 1000: 
-                    break
+
+            if data and re.search(r'[A-Za-z]{3}', data): 
+                cleaned = re.sub(r'[^A-Za-z0-9 ,.\'!?-]', ' ', data)
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                if len(cleaned.split()) > 3:
+                    text_parts.append(cleaned)
+                    char_count += len(cleaned)
+                    if char_count > 1000: 
+                        break
 
         return ' '.join(text_parts)
+
     except Exception as e:
         print(f"Error scraping {url}: {e}")
         return ""
-
 
 
 def main():
@@ -278,7 +283,7 @@ def main():
     if not scraped_text.strip():
         print("No text scraped.")
         return
-
+    
     state_size = int(input("Enter state size (try 1-4): "))
     min_words = int(input("Enter min words to generate: "))
 
@@ -294,7 +299,6 @@ def main():
         response.raise_for_status()
         result = response.json()
 
-        # Apply corrections
         corrected_text = new_text
         for match in sorted(result['matches'], key=lambda m: m['offset'], reverse=True):
             if match['replacements']:
@@ -303,7 +307,7 @@ def main():
                 end = start + match['length']
                 corrected_text = corrected_text[:start] + replacement + corrected_text[end:]
 
-        print("\nGenerated text\n", corrected_text)
+        print("Generated text\n", corrected_text)
 
     except Exception as e:
         print(f"Grammar correction failed: {e}")
