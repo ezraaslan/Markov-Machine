@@ -106,18 +106,31 @@ import nltk
 from nltk.corpus import wordnet
 import urllib.parse
 
+import language_tool_python
+
+import inflect
+
+p = inflect.engine()
+
 def pluralize(og, new):
-    if og == "is":
+    if og.lower() == "is":
         return new
+    
     if og.isupper():
         new = new.capitalize()
+        return new
+    
     if og.endswith("ed"):
-        new += "ed"
-    if og.endswith("y") and not og.endswith(("ay","ey","iy","oy","uy")):
-        return new + "ies"
-    elif og.endswith("s"):
-        return new + "es"
+        return new + "ed"
+    
+    if og.lower().endswith("y") and not og.lower().endswith(("ay", "ey", "iy", "oy", "uy")):
+        return p.plural(new)
+    
+    if og.endswith("s"):
+        return p.plural(new)
+    
     return new
+
 
 
 def get_synonym(word, pos=None):
@@ -272,8 +285,28 @@ def main():
     chart = build_ngram_chart(scraped_text, state_size)
     generated = generate_from_chart(chart, state_size, min_words)
     new_text = replace(generated.split(" "))
-    print("\n--- Generated Text ---\n", new_text)
 
+    url = "https://api.languagetool.org/v2/check"
+    payload = {'text': new_text, 'language': "en-US"}
+    
+    try:
+        response = requests.post(url, data=payload, timeout=5)
+        response.raise_for_status()
+        result = response.json()
+
+        # Apply corrections
+        corrected_text = new_text
+        for match in sorted(result['matches'], key=lambda m: m['offset'], reverse=True):
+            if match['replacements']:
+                replacement = match['replacements'][0]['value']
+                start = match['offset']
+                end = start + match['length']
+                corrected_text = corrected_text[:start] + replacement + corrected_text[end:]
+
+        print("\nGenerated text\n", corrected_text)
+
+    except Exception as e:
+        print(f"Grammar correction failed: {e}")
 
 if __name__ == "__main__":
     main()
