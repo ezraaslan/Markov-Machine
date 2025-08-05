@@ -94,20 +94,15 @@
 #     main()
 
 
-
-
-
-
 from collections import defaultdict, Counter
 import random
 import requests
 from bs4 import BeautifulSoup
 import nltk
 from nltk.corpus import wordnet
+from nltk.wsd import lesk
 import urllib.parse
-
-import language_tool_python
-
+import re
 import inflect
 
 p = inflect.engine()
@@ -133,17 +128,15 @@ def pluralize(og, new):
 
 
 
-def get_synonym(word, pos=None):
-    synonyms = []
-    for syn in wordnet.synsets(word, pos=pos):
-        for lemma in syn.lemmas():
-            name = lemma.name().replace('_', ' ')
-            if name.lower() != word.lower():
-                synonyms.append(name)
+def get_synonym(word, context_sentence, pos=None):
+    synset = lesk(context_sentence, word, pos=pos)
+    if not synset:
+        return word
+    synonyms = [lemma.name().replace('_', ' ') for lemma in synset.lemmas() if lemma.name().lower() != word.lower()]
     if not synonyms:
         return word
     new = random.choice(synonyms)
-    return pluralize(word, new) 
+    return pluralize(word, new)
 
 
 def get_pos(tag):
@@ -162,16 +155,19 @@ def replace(words):
 
     tagged = nltk.pos_tag(words)
     new_words = []
-    for word, tag in tagged:
+    for i, (word, tag) in enumerate(tagged):
         if not word:
             continue
         wn_pos = get_pos(tag)
         if wn_pos in [wordnet.NOUN, wordnet.VERB, wordnet.ADJ]:
             if random.random() < 0.5:
-                word = get_synonym(word, wn_pos)
+                context = words[max(0, i-5): i+6]
+                synonym = get_synonym(word, context, wn_pos)
+                word = pluralize(word, synonym)
         new_words.append(word)
-    
+
     return ' '.join(new_words) if new_words else ' '.join(words)
+
 
 
 def build_ngram_chart(corpus, state_size=2):
@@ -200,12 +196,21 @@ def generate_from_chart(chart, state_size, min_words=50):
             state = random.choice(list(chart.keys()))
             next_probs = chart[state]
         next_word = random.choices(list(next_probs.keys()), weights=list(next_probs.values()), k=1)[0]
+        if not output[-1].endswith((".", "!", "?")):
+            next_word = next_word.lower()
+        elif output[-1].endswith((".", "!", "?")):
+            next_word = next_word.capitalize()
         output.append(next_word)
         state = tuple(output[-state_size:])
 
     while not output[-1].endswith(('.', '!', '?')):
-        next_probs = chart.get(state) or random.choice(list(chart.values()))
-        next_word = random.choice(list(next_probs.keys()))
+        next_probs = chart.get(state)
+        if not next_probs:
+            state = random.choice(list(chart.keys()))
+            next_probs = chart[state]
+        next_word = random.choices(list(next_probs.keys()), weights=list(next_probs.values()), k=1)[0]
+        if not output[-1].endswith((".", "!", "?")):
+            next_word = next_word.lower()
         output.append(next_word)
         state = tuple(output[-state_size:])
 
@@ -235,8 +240,6 @@ def search(keywords, num=5):
         results.append(link)
     return results
 
-
-import re
 
 def scrape_text(url):
     try:
@@ -273,7 +276,6 @@ def scrape_text(url):
 def main():
     keywords = input("Enter search query: ")
     urls = search(keywords, num=5)
-    print(urls)
     if not urls:
         print("No results found.")
         return
