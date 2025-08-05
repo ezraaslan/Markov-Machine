@@ -7,10 +7,7 @@ from nltk.corpus import wordnet
 from nltk.wsd import lesk
 import urllib.parse
 import re
-import inflect
 from duckduckgo_search import DDGS 
-
-p = inflect.engine()
 
 def pluralize(og, new):
     if og.lower() == "is":
@@ -21,9 +18,10 @@ def pluralize(og, new):
     if og.endswith("ed"):
         return new + "ed"
     if og.lower().endswith("y") and not og.lower().endswith(("ay", "ey", "iy", "oy", "uy")):
-        return p.plural(new)
+        new = new[:-1]
+        return new + "ies"
     if og.endswith("s"):
-        return p.plural(new)
+        return new + "s"
     return new
 
 def get_synonym(word, context_sentence, pos=None):
