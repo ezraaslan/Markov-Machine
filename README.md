@@ -4,10 +4,4 @@ This is my first try at a computationally efficient text-generation algorithm. C
 DEMO INSTRUCTIONS
 Run the program interactively:
 
-```bash
-git clone https://github.com/ezraaslan/markov-machine.git
-cd markov-machine
-python Markov_Machine.py
-
-```
-Or download Markov_Machine.py and run the code in VS Code or another platform.
+Go to the releases page and click on the Markov_Generator.exe to run. It takes a minute to load once you run it in the terminal -- don't worry, it should still work.
