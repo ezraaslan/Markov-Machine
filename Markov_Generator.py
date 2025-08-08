@@ -7,7 +7,23 @@ from nltk.corpus import wordnet
 from nltk.wsd import lesk
 import urllib.parse
 import re
-from duckduckgo_search import DDGS 
+from duckduckgo_search import DDGS
+import subprocess
+
+def make_coherent(text, model="phi3"):
+    prompt = f"Make this text coherent, fix out of place synonyms, and correct awkward grammar, but don't change the core meaning:\n\n{text}"
+    try:
+        result = subprocess.run(
+            ['ollama', 'run', model],
+            input=prompt.encode('utf-8'),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=20
+        )
+        return result.stdout.decode().strip()
+    except Exception as e:
+        print("Coherence model failed:", e)
+        return text 
 
 def pluralize(og, new):
     if og.lower() == "is":
@@ -112,7 +128,7 @@ def scrape_text(url):
             return "" 
         response.encoding = response.apparent_encoding
         soup = BeautifulSoup(response.text, 'lxml')
-        for s in soup(["script", "style", "noscript"]):
+        for s in soup(["script", "style", "noscript", "footer"]):
             s.extract()
         text_parts, char_count = [], 0
         for p in soup.find_all(['p', 'h1', 'h2', 'h3']):
@@ -160,9 +176,12 @@ def main():
                 start = match['offset']
                 end = start + match['length']
                 corrected_text = corrected_text[:start] + replacement + corrected_text[end:]
-        print("Generated text\n", corrected_text)
     except Exception as e:
         print(f"Grammar correction failed: {e}")
+
+    final_text = make_coherent(corrected_text)
+    print("\nFinal coherent version:\n", final_text)
+
 
 if __name__ == "__main__":
     main()
