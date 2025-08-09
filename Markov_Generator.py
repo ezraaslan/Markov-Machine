@@ -11,14 +11,14 @@ from duckduckgo_search import DDGS
 import subprocess
 
 def make_coherent(text, model="phi3"):
-    prompt = f"Make this text coherent, fix out of place synonyms, and correct awkward grammar, but don't change the core meaning:\n\n{text}"
+    prompt = f"Make this text coherent, fix out of place synonyms, and correct awkward grammar, but don't change the core meaning. Rewrite this text so it is logical, grammatically correct, and reads like a human wrote it. Preserve the meaning, but reorganize sentences if needed for clarity:\n\n{text}"
     try:
         result = subprocess.run(
             ['ollama', 'run', model],
             input=prompt.encode('utf-8'),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=20
+            timeout=60
         )
         return result.stdout.decode().strip()
     except Exception as e:
@@ -69,7 +69,7 @@ def replace(words):
             continue
         wn_pos = get_pos(tag)
         if wn_pos in [wordnet.NOUN, wordnet.VERB, wordnet.ADJ]:
-            if random.random() < 0.5:
+            if random.random() < 0.1:
                 context = words[max(0, i-5): i+6]
                 synonym = get_synonym(word, context, wn_pos)
                 word = pluralize(word, synonym)
@@ -180,8 +180,8 @@ def main():
         print(f"Grammar correction failed: {e}")
 
     final_text = make_coherent(corrected_text)
-    print("\nFinal coherent version:\n", final_text)
+    print("\nGenerated text:\n", final_text)
 
 
 if __name__ == "__main__":
-    main()
+    main() 
