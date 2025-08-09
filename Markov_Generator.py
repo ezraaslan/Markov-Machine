@@ -184,4 +184,16 @@ def main():
 
 
 if __name__ == "__main__":
+    try:
+        print("Warming up coherence model...")
+        subprocess.run(
+            ['ollama', 'run', 'phi3'],
+            input="Hello".encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30
+        )
+        print("Model warm-up complete.")
+    except Exception as e:
+        print("Model warm-up failed:", e)
     main() 
