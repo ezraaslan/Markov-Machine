@@ -206,7 +206,11 @@ def main():
     generated = generate_from_chart(chart, state_size, min_words)
     new_text = replace(generated.split(" "))
 
-    final_text = make_coherent(new_text)
+    model = input("Enter model to use for coherence parsing -- phi3 (better output, more time) or phi3-mini (worse output, less time): ")
+    if not model:
+        model = "phi3"
+
+    final_text = make_coherent(new_text, model)
     print("\nGenerated text:\n", final_text)
 
 if __name__ == "__main__":
