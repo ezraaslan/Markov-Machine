@@ -197,3 +197,4 @@ if __name__ == "__main__":
     except Exception as e:
         print("Model warm-up failed:", e)
     main() 
+    input("\nPress Enter to exit program\n")
