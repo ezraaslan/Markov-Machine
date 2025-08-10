@@ -45,7 +45,7 @@ def make_coherent(text, model="phi3"):
     url = "http://localhost:11434/api/generate"
     payload = {
         "model": model,
-        "prompt": f"Fix awkward grammar and out-of-place synonyms in the following text. Output only the corrected text, without any extra commentary or labels:\n\n{text}",
+        "prompt": f"Fix awkward grammar and out-of-place synonyms in the following text, without changing the meaning or word count. Make it sound human-written, not AI written. Don't use first person. Output only the corrected text, without any extra commentary or labels:\n\n{text}",
         "stream": False
     }
     try:
