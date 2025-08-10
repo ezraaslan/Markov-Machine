@@ -10,21 +10,54 @@ import re
 from duckduckgo_search import DDGS
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+import time
+import atexit
+
+print("Starting Ollama server...")
+ollama_server = subprocess.Popen(
+    ["ollama", "serve"],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL
+)
+atexit.register(lambda: ollama_server.terminate())
+
+for _ in range(20):
+    try:
+        r = requests.get("http://localhost:11434/api/tags", timeout=0.5)
+        if r.status_code == 200:
+            break
+    except requests.exceptions.RequestException:
+        time.sleep(0.5)
+else:
+    print("Ollama server did not start in time.")
+
+try:
+    requests.post("http://localhost:11434/api/generate", json={
+        "model": "phi3",
+        "prompt": "Hello",
+        "stream": False
+    }, timeout=30)
+    print("Model loaded and ready.")
+except Exception as e:
+    print("Model preload failed:", e)
 
 def make_coherent(text, model="phi3"):
     url = "http://localhost:11434/api/generate"
     payload = {
         "model": model,
-        "prompt": f"Make this text coherent, fix out of place synonyms, and correct awkward grammar, but don't change the core meaning:\n\n{text}",
+        "prompt": f"Fix awkward grammar and out-of-place synonyms in the following text. Output only the corrected text, without any extra commentary or labels:\n\n{text}",
         "stream": False
     }
     try:
         resp = requests.post(url, json=payload, timeout=60)
         resp.raise_for_status()
-        return resp.json()["response"].strip()
+        response_text = resp.json()["response"].strip()
+        lines = [line.strip() for line in response_text.splitlines() if line.strip()]
+        return lines[-1] if lines else response_text
     except Exception as e:
         print("Coherence model failed:", e)
         return text
+
 
 def pluralize(og, new):
     if og.lower() == "is":
@@ -116,7 +149,6 @@ def generate_from_chart(chart, state_size, min_words=50):
         state = tuple(output[-state_size:])
     return " ".join(output)
 
-
 def search(keywords, num=5):
     with DDGS() as ddgs:
         results = ddgs.text(keywords, max_results=num)
@@ -154,7 +186,6 @@ def scrape_text(url):
     except Exception:
         return ""
 
-
 def main():
     keywords = input("Enter search query: ")
     urls = search(keywords, num=5)
@@ -178,19 +209,6 @@ def main():
     final_text = make_coherent(new_text)
     print("\nGenerated text:\n", final_text)
 
-
 if __name__ == "__main__":
-    try:
-        print("Warming up coherence model...")
-        subprocess.run(
-            ['ollama', 'run', 'phi3'],
-            input="Hello".encode(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=30
-        )
-        print("Model warm-up complete.")
-    except Exception as e:
-        print("Model warm-up failed:", e)
-    main() 
+    main()
     input("\nPress Enter to exit program.")
