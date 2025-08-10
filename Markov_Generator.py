@@ -9,21 +9,22 @@ import urllib.parse
 import re
 from duckduckgo_search import DDGS
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 def make_coherent(text, model="phi3"):
-    prompt = f"Make this text coherent, fix out of place synonyms, and correct awkward grammar, but don't change the core meaning. Rewrite this text so it is logical, grammatically correct, and reads like a human wrote it. Preserve the meaning, but reorganize sentences if needed for clarity:\n\n{text}"
+    url = "http://localhost:11434/api/generate"
+    payload = {
+        "model": model,
+        "prompt": f"Make this text coherent, fix out of place synonyms, and correct awkward grammar, but don't change the core meaning:\n\n{text}",
+        "stream": False
+    }
     try:
-        result = subprocess.run(
-            ['ollama', 'run', model],
-            input=prompt.encode('utf-8'),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=60
-        )
-        return result.stdout.decode().strip()
+        resp = requests.post(url, json=payload, timeout=60)
+        resp.raise_for_status()
+        return resp.json()["response"].strip()
     except Exception as e:
         print("Coherence model failed:", e)
-        return text 
+        return text
 
 def pluralize(og, new):
     if og.lower() == "is":
@@ -121,16 +122,22 @@ def search(keywords, num=5):
         results = ddgs.text(keywords, max_results=num)
         return [res['href'] for res in results if 'href' in res]
 
+HEADERS = {"User-Agent": "Mozilla/5.0"}
+
 def scrape_text(url):
     try:
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        response = requests.get(url, headers=HEADERS, timeout=5)
         if response.status_code != 200 or "text/html" not in response.headers.get("Content-Type", ""):
             return "" 
-        response.encoding = response.apparent_encoding
+
         soup = BeautifulSoup(response.text, 'lxml')
+
         for s in soup(["script", "style", "noscript", "footer"]):
             s.extract()
-        text_parts, char_count = [], 0
+
+        text_parts = []
+        char_count = 0
+
         for p in soup.find_all(['p', 'h1', 'h2', 'h3']):
             data = p.get_text(strip=True)
             if data and re.search(r'[A-Za-z]{3}', data): 
@@ -139,12 +146,14 @@ def scrape_text(url):
                 if len(cleaned.split()) > 3:
                     text_parts.append(cleaned)
                     char_count += len(cleaned)
-                    if char_count > 1000: 
+                    if char_count > 1000:
                         break
+
         return ' '.join(text_parts)
-    except Exception as e:
-        print(f"Error scraping {url}: {e}")
+
+    except Exception:
         return ""
+
 
 def main():
     keywords = input("Enter search query: ")
@@ -152,9 +161,11 @@ def main():
     if not urls:
         print("No results found.")
         return
-    scraped_text = ""
-    for u in urls:
-        scraped_text += scrape_text(u)
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        results = list(executor.map(scrape_text, urls))
+
+    scraped_text = " ".join(filter(None, results))
+
     if not scraped_text.strip():
         print("No text scraped.")
         return
@@ -163,23 +174,8 @@ def main():
     chart = build_ngram_chart(scraped_text, state_size)
     generated = generate_from_chart(chart, state_size, min_words)
     new_text = replace(generated.split(" "))
-    url = "https://api.languagetool.org/v2/check"
-    payload = {'text': new_text, 'language': "en-US"}
-    try:
-        response = requests.post(url, data=payload, timeout=5)
-        response.raise_for_status()
-        result = response.json()
-        corrected_text = new_text
-        for match in sorted(result['matches'], key=lambda m: m['offset'], reverse=True):
-            if match['replacements']:
-                replacement = match['replacements'][0]['value']
-                start = match['offset']
-                end = start + match['length']
-                corrected_text = corrected_text[:start] + replacement + corrected_text[end:]
-    except Exception as e:
-        print(f"Grammar correction failed: {e}")
 
-    final_text = make_coherent(corrected_text)
+    final_text = make_coherent(new_text)
     print("\nGenerated text:\n", final_text)
 
 
@@ -197,4 +193,4 @@ if __name__ == "__main__":
     except Exception as e:
         print("Model warm-up failed:", e)
     main() 
-    input("\nPress Enter to exit program\n")
+    input("\nPress Enter to exit program.")
