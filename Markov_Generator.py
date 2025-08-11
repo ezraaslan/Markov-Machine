@@ -12,34 +12,132 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 import time
 import atexit
+import tkinter as tk
+from tkinter import ttk, scrolledtext, messagebox
+import threading
 
-print("Starting Ollama server...")
-ollama_server = subprocess.Popen(
-    ["ollama", "serve"],
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL
-)
-atexit.register(lambda: ollama_server.terminate())
+def tkinter():
+    root = tk.Tk()
+    root.title("Next-Gen Text Generator")
+    root.geometry("800x600")
 
-for _ in range(20):
-    try:
-        r = requests.get("http://localhost:11434/api/tags", timeout=0.5)
-        if r.status_code == 200:
-            break
-    except requests.exceptions.RequestException:
-        time.sleep(0.5)
-else:
-    print("Ollama server did not start in time.")
+    tk.Label(root, text="Enter search query:").pack(anchor="w", padx=10, pady=(10, 0))
+    keywords_text = tk.Text(root, height=4, width=80)
+    keywords_text.pack(padx=10, pady=(0, 10))
 
-try:
-    requests.post("http://localhost:11434/api/generate", json={
-        "model": "phi3",
-        "prompt": "Hello",
-        "stream": False
-    }, timeout=30)
-    print("Model loaded and ready.")
-except Exception as e:
-    print("Model preload failed:", e)
+    params_frame = tk.Frame(root)
+    params_frame.pack(padx=10, pady=5, fill="x")
+
+    tk.Label(params_frame, text="State size:").grid(row=0, column=0, sticky="w")
+    state_size_spin = tk.Spinbox(params_frame, from_=1, to=4, width=5)
+    state_size_spin.grid(row=1, column=0, sticky="w", padx=(0, 20))
+
+    tk.Label(params_frame, text="Min words to generate:").grid(row=0, column=1, sticky="w")
+    min_words_spin = tk.Spinbox(params_frame, from_=10, to=500, increment=10, width=7)
+    min_words_spin.grid(row=1, column=1, sticky="w", padx=(0, 20))
+
+    tk.Label(params_frame, text="Model:").grid(row=0, column=2, sticky="w")
+    model_combo = ttk.Combobox(params_frame, values=["phi3", "phi3-mini"], state="readonly", width=10)
+    model_combo.current(0) 
+    model_combo.grid(row=1, column=2, sticky="w")
+
+    output_box = scrolledtext.ScrolledText(root, height=20, width=95)
+    output_box.pack(padx=10, pady=10, fill="both", expand=True)
+
+    def run_generation():
+        keywords = keywords_text.get("1.0", "end").strip()
+        if not keywords:
+            messagebox.showerror("Input Error", "Please enter a search query.")
+            return
+        try:
+            state_size = int(state_size_spin.get())
+            min_words = int(min_words_spin.get())
+        except ValueError:
+            messagebox.showerror("Input Error", "State size and min words must be numbers.")
+            return
+        model = model_combo.get()
+
+        output_box.delete("1.0", "end")
+        output_box.insert("end", "Starting text generation...\n")
+
+       
+        def task():
+            urls = search(keywords, num=5)
+            if not urls:
+                messagebox.showerror("Input Error", "No search results found. Please regenerate.")
+                return
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                results = list(executor.map(scrape_text, urls))
+
+            scraped_text = " ".join(filter(None, results))
+
+            if not scraped_text.strip():
+                messagebox.showerror("Input Error", "No text scraped.")
+                return
+            
+
+
+
+            chart = build_ngram_chart(scraped_text, state_size)
+            generated = generate_from_chart(chart, state_size, min_words)
+            new_text = replace(generated.split(" "))
+
+            final_text = make_coherent(new_text, model)
+
+
+            final_text = f"Keywords: {keywords}\nState Size: {state_size}\nMin Words: {min_words}\nModel: {model}\n\nGenerated text:\n{final_text}"
+
+
+            def update_output():
+                output_box.insert("end", final_text + "\n")
+            root.after(0, update_output)
+
+        threading.Thread(target=task).start()
+
+    generate_button = tk.Button(root, text="Generate", command=run_generation)
+    generate_button.pack(pady=5)
+
+    root.mainloop()
+class OllamaServer:
+    def __init__(self):
+        self.process = None
+
+    def start(self):
+        if self.process is not None:
+            return True 
+
+        messagebox.showinfo("Update", "Starting Ollama server...")
+        self.process = subprocess.Popen(
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        for _ in range(20):
+            try:
+                r = requests.get("http://localhost:11434/api/tags", timeout=0.5)
+                if r.status_code == 200:
+                    messagebox.showinfo("Update", "Ollama server is up and running.")
+                    return True
+            except requests.exceptions.RequestException:
+                time.sleep(0.5)
+
+        messagebox.showinfo("Update", "Ollama server did not start in time.")
+        return False
+
+    def stop(self):
+        if self.process:
+            messagebox.showinfo("Update", "Stopping Ollama server...")
+            self.process.terminate()
+            self.process = None
+
+ollama = OllamaServer()
+
+atexit.register(ollama.stop)
+
+if not ollama.start():
+    messagebox.showinfo("Update", "Failed to start Ollama server. Exiting program.")
+    exit(1)
 
 def make_coherent(text, model="phi3"):
     url = "http://localhost:11434/api/generate"
@@ -55,7 +153,7 @@ def make_coherent(text, model="phi3"):
         lines = [line.strip() for line in response_text.splitlines() if line.strip()]
         return lines[-1] if lines else response_text
     except Exception as e:
-        print("Coherence model failed:", e)
+        messagebox.showinfo("Update", "Coherence model failed.")
         return text
 
 
@@ -187,32 +285,8 @@ def scrape_text(url):
         return ""
 
 def main():
-    keywords = input("Enter search query: ")
-    urls = search(keywords, num=5)
-    if not urls:
-        print("No results found.")
-        return
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results = list(executor.map(scrape_text, urls))
-
-    scraped_text = " ".join(filter(None, results))
-
-    if not scraped_text.strip():
-        print("No text scraped.")
-        return
-    state_size = int(input("Enter state size (try 1-4): "))
-    min_words = int(input("Enter min words to generate: "))
-    chart = build_ngram_chart(scraped_text, state_size)
-    generated = generate_from_chart(chart, state_size, min_words)
-    new_text = replace(generated.split(" "))
-
-    model = input("Enter model to use for coherence parsing -- phi3 (better output, more time) or phi3-mini (worse output, less time): ")
-    if not model:
-        model = "phi3"
-
-    final_text = make_coherent(new_text, model)
-    print("\nGenerated text:\n", final_text)
+    tkinter()
+    
 
 if __name__ == "__main__":
     main()
-    input("\nPress Enter to exit program.")
