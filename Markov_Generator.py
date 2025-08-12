@@ -15,89 +15,21 @@ import atexit
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import threading
+import ctypes
 
-def tkinter():
-    root = tk.Tk()
-    root.title("Next-Gen Text Generator")
-    root.geometry("800x600")
+status_label = None
 
-    tk.Label(root, text="Enter search query:").pack(anchor="w", padx=10, pady=(10, 0))
-    keywords_text = tk.Text(root, height=4, width=80)
-    keywords_text.pack(padx=10, pady=(0, 10))
-
-    params_frame = tk.Frame(root)
-    params_frame.pack(padx=10, pady=5, fill="x")
-
-    tk.Label(params_frame, text="State size:").grid(row=0, column=0, sticky="w")
-    state_size_spin = tk.Spinbox(params_frame, from_=1, to=4, width=5)
-    state_size_spin.grid(row=1, column=0, sticky="w", padx=(0, 20))
-
-    tk.Label(params_frame, text="Min words to generate:").grid(row=0, column=1, sticky="w")
-    min_words_spin = tk.Spinbox(params_frame, from_=10, to=500, increment=10, width=7)
-    min_words_spin.grid(row=1, column=1, sticky="w", padx=(0, 20))
-
-    tk.Label(params_frame, text="Model:").grid(row=0, column=2, sticky="w")
-    model_combo = ttk.Combobox(params_frame, values=["phi3", "phi3-mini"], state="readonly", width=10)
-    model_combo.current(0) 
-    model_combo.grid(row=1, column=2, sticky="w")
-
-    output_box = scrolledtext.ScrolledText(root, height=20, width=95)
-    output_box.pack(padx=10, pady=10, fill="both", expand=True)
-
-    def run_generation():
-        keywords = keywords_text.get("1.0", "end").strip()
-        if not keywords:
-            messagebox.showerror("Input Error", "Please enter a search query.")
-            return
-        try:
-            state_size = int(state_size_spin.get())
-            min_words = int(min_words_spin.get())
-        except ValueError:
-            messagebox.showerror("Input Error", "State size and min words must be numbers.")
-            return
-        model = model_combo.get()
-
-        output_box.delete("1.0", "end")
-        output_box.insert("end", "Starting text generation...\n")
-
-       
-        def task():
-            urls = search(keywords, num=5)
-            if not urls:
-                messagebox.showerror("Input Error", "No search results found. Please regenerate.")
-                return
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                results = list(executor.map(scrape_text, urls))
-
-            scraped_text = " ".join(filter(None, results))
-
-            if not scraped_text.strip():
-                messagebox.showerror("Input Error", "No text scraped.")
-                return
-            
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1) 
+except Exception:
+    pass
 
 
-
-            chart = build_ngram_chart(scraped_text, state_size)
-            generated = generate_from_chart(chart, state_size, min_words)
-            new_text = replace(generated.split(" "))
-
-            final_text = make_coherent(new_text, model)
+def update_status(text):
+    if status_label:
+        status_label.after(0, lambda: status_label.config(text=text))
 
 
-            final_text = f"Keywords: {keywords}\nState Size: {state_size}\nMin Words: {min_words}\nModel: {model}\n\nGenerated text:\n{final_text}"
-
-
-            def update_output():
-                output_box.insert("end", final_text + "\n")
-            root.after(0, update_output)
-
-        threading.Thread(target=task).start()
-
-    generate_button = tk.Button(root, text="Generate", command=run_generation)
-    generate_button.pack(pady=5)
-
-    root.mainloop()
 class OllamaServer:
     def __init__(self):
         self.process = None
@@ -106,7 +38,8 @@ class OllamaServer:
         if self.process is not None:
             return True 
 
-        messagebox.showinfo("Update", "Starting Ollama server...")
+        update_status("Starting Ollama server...")
+
         self.process = subprocess.Popen(
             ["ollama", "serve"],
             stdout=subprocess.DEVNULL,
@@ -117,33 +50,29 @@ class OllamaServer:
             try:
                 r = requests.get("http://localhost:11434/api/tags", timeout=0.5)
                 if r.status_code == 200:
-                    messagebox.showinfo("Update", "Ollama server is up and running.")
+                    update_status("Ollama server is up and running.")
                     return True
             except requests.exceptions.RequestException:
                 time.sleep(0.5)
-
-        messagebox.showinfo("Update", "Ollama server did not start in time.")
+        update_status("Ollama server did not start in time.")
         return False
 
     def stop(self):
         if self.process:
-            messagebox.showinfo("Update", "Stopping Ollama server...")
+            update_status("Stopping Ollama server...")
             self.process.terminate()
             self.process = None
+
 
 ollama = OllamaServer()
 
 atexit.register(ollama.stop)
 
-if not ollama.start():
-    messagebox.showinfo("Update", "Failed to start Ollama server. Exiting program.")
-    exit(1)
-
 def make_coherent(text, model="phi3"):
     url = "http://localhost:11434/api/generate"
     payload = {
         "model": model,
-        "prompt": f"Fix awkward grammar and out-of-place synonyms in the following text, without changing the meaning or word count. Make it sound human-written, not AI written. Don't use first person. Output only the corrected text, without any extra commentary or labels:\n\n{text}",
+        "prompt": f"Fix awkward grammar and out-of-place synonyms in the following text without changing its meaning or word count. Make it sound natural and human-written. Do not include any notes. Do not use first person. Do not use second person. Do not summarize or add commentary. Output only the corrected text:\n\n{text}",
         "stream": False
     }
     try:
@@ -153,7 +82,7 @@ def make_coherent(text, model="phi3"):
         lines = [line.strip() for line in response_text.splitlines() if line.strip()]
         return lines[-1] if lines else response_text
     except Exception as e:
-        messagebox.showinfo("Update", "Coherence model failed.")
+        update_status("Coherence model failed.")
         return text
 
 
@@ -172,6 +101,7 @@ def pluralize(og, new):
         return new + "s"
     return new
 
+
 def get_synonym(word, context_sentence, pos=None):
     synset = lesk(context_sentence, word, pos=pos)
     if not synset:
@@ -182,6 +112,7 @@ def get_synonym(word, context_sentence, pos=None):
     new = random.choice(synonyms)
     return pluralize(word, new)
 
+
 def get_pos(tag):
     if tag.startswith("J"):
         return wordnet.ADJ
@@ -190,6 +121,7 @@ def get_pos(tag):
     elif tag.startswith("V"):
         return wordnet.VERB
     return None
+
 
 def replace(words):
     if isinstance(words, str):
@@ -208,6 +140,7 @@ def replace(words):
         new_words.append(word)
     return ' '.join(new_words) if new_words else ' '.join(words)
 
+
 def build_ngram_chart(corpus, state_size=2):
     words = corpus.split()
     transitions = defaultdict(Counter)
@@ -216,6 +149,7 @@ def build_ngram_chart(corpus, state_size=2):
         next_word = words[i + state_size]
         transitions[state][next_word] += 1
     return {state: {w: c / sum(counter.values()) for w, c in counter.items()} for state, counter in transitions.items()}
+
 
 def generate_from_chart(chart, state_size, min_words=50):
     def get_starter():
@@ -247,12 +181,15 @@ def generate_from_chart(chart, state_size, min_words=50):
         state = tuple(output[-state_size:])
     return " ".join(output)
 
+
 def search(keywords, num=5):
     with DDGS() as ddgs:
         results = ddgs.text(keywords, max_results=num)
         return [res['href'] for res in results if 'href' in res]
 
+
 HEADERS = {"User-Agent": "Mozilla/5.0"}
+
 
 def scrape_text(url):
     try:
@@ -284,9 +221,176 @@ def scrape_text(url):
     except Exception:
         return ""
 
+
+def tkinter():
+    global status_label
+    root = tk.Tk()
+    root.title("Next-Gen Text Generator")
+    root.geometry("1500x1200")
+    root.configure(bg="#f0f0f0")
+
+    tk.Label(root, text="Enter search query:", font=("Segoe UI", 12)).pack(padx=10, pady=0, anchor="center")
+    keywords_text = tk.Text(root, height=4, width=80, font=("Segoe UI", 12))
+    keywords_text.pack(padx=10, pady=(0, 10))
+
+
+    params_frame = tk.Frame(root)
+    params_frame.pack(padx=200, pady=5, fill="x")
+
+    tk.Label(params_frame, text="State size:", font=("Segoe UI", 12), anchor="center").grid(row=0, column=0)
+    state_size_spin = tk.Spinbox(params_frame, from_=2, to=4, width=5, font=("Segoe UI", 12))
+    state_size_spin.grid(row=1, column=0, padx=100)
+    style = ttk.Style()
+    style.configure("TCombobox", font=("Segoe UI", 12))
+
+
+    tk.Label(params_frame, text="Min words to generate:", font=("Segoe UI", 12)).grid(row=0, column=1, sticky="")
+    min_words_spin = tk.Spinbox(params_frame, from_=10, to=500, increment=10, width=7, font=("Segoe UI", 12))
+    min_words_spin.grid(row=1, column=1, sticky="", padx=200)
+    style = ttk.Style()
+    style.configure("TCombobox", font=("Segoe UI", 12))
+
+    tk.Label(params_frame, text="Model:", font = ("Segoe UI", 12)).grid(row=0, column=2, sticky="")
+    model_combo = ttk.Combobox(params_frame, values=["phi3", "phi3-mini"], state="readonly", width=10, font = ("Segoe UI", 12))
+    model_combo.current(0)
+    model_combo.grid(row=1, column=2, sticky="e")
+    style = ttk.Style()
+    style.configure("TCombobox", font=("Segoe UI", 12))
+
+    tk.Label(params_frame, text="Generated text:", font=("Segoe UI", 12), anchor="center").grid(row=2, column=1)
+
+    output_box = scrolledtext.ScrolledText(root, height=20, width=85)
+    output_box.pack(padx=10, pady=10, fill="both", expand=True)
+
+    status_label = ttk.Label(root, text="", font=("Segoe UI", 12, "italic"))
+    status_label.pack(pady=5)
+
+    def run_generation():
+        keywords = keywords_text.get("1.0", "end").strip()
+        if not keywords:
+            messagebox.showerror("Input Error", "Please enter a search query.")
+            return
+        try:
+            state_size = int(state_size_spin.get())
+            min_words = int(min_words_spin.get())
+        except ValueError:
+            messagebox.showerror("Input Error", "State size and min words must be numbers.")
+            return
+        model = model_combo.get()
+
+        output_box.delete("1.0", "end")
+        update_status("Searching for URLs...")
+        dots = 0
+        loading_job = None
+
+        def animate_dots(text):
+            nonlocal dots, loading_job
+            dots = (dots + 1) % 4
+            update_status(text + "." * dots)
+            loading_job = root.after(500, lambda: animate_dots(text)) 
+
+
+        def start_loading_animation(text):
+            nonlocal dots
+            dots = 0
+            animate_dots(text)
+
+        def stop_loading_animation():
+            nonlocal loading_job
+            if loading_job:
+                root.after_cancel(loading_job)
+                loading_job = None
+
+        def task():
+
+            urls = search(keywords, num=5)
+            if not urls:
+                root.after(0, lambda: messagebox.showerror("Input Error", "No search results found. Please regenerate."))
+                update_status("No search results found.")
+                return
+            
+            root.after(0, lambda: start_loading_animation(f"Found {len(urls)} URLs. Scraping texts"))
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                results = list(executor.map(scrape_text, urls))
+
+            scraped_text = " ".join(filter(None, results))
+
+            root.after(0, stop_loading_animation)
+
+            if not scraped_text.strip():
+                root.after(0, lambda: messagebox.showerror("Input Error", "No text scraped."))
+                update_status("No text scraped from URLs.")
+                return
+
+            root.after(0, lambda: start_loading_animation("Building n-gram chart"))
+            chart = build_ngram_chart(scraped_text, state_size)
+            root.after(0, stop_loading_animation)
+
+            root.after(0, lambda: start_loading_animation("Generating text"))
+            generated = generate_from_chart(chart, state_size, min_words)
+            root.after(0, stop_loading_animation)
+
+            root.after(0, lambda: start_loading_animation("Replacing synonyms"))
+            new_text = replace(generated.split(" "))
+            root.after(0, stop_loading_animation)
+
+            root.after(0, lambda: start_loading_animation("Making text coherent with model"))
+            final_text = make_coherent(new_text, model)
+            root.after(0, stop_loading_animation)
+
+            final_text = (f"Generated text:\n{final_text}")
+
+            def update_output():
+                output_box.insert("end", final_text + "\n")
+                update_status("Generation complete.")
+
+            root.after(0, update_output)
+            stop_loading_animation()
+
+        threading.Thread(target=task).start()
+
+    def copy():
+        text = output_box.get("1.0", tk.END).strip()
+        if text:
+            root.clipboard_clear()
+            root.clipboard_append(text)
+            root.update()
+            update_status("Text copied.")
+        else:
+            messagebox.showwarning("Empty", "No generated text to copy.")
+
+    generate_button = tk.Button(root, text="Generate", command=run_generation)
+    generate_button.pack(pady=5)
+
+    copy_button = tk.Button(root, text="Copy text", command=copy)
+    copy_button.pack(pady=5)
+
+    def enter(event):
+        event.widget.config(background="lightgray")
+
+    def leave(event):
+        event.widget.config(background="SystemButtonFace")
+
+    generate_button.bind("<Enter>", enter)
+    generate_button.bind("<Leave>", leave)
+
+    copy_button.bind("<Enter>", enter)
+    copy_button.bind("<Leave>", leave)
+
+    def start_ollama_and_update():
+        if not ollama.start():
+            root.after(0, lambda: messagebox.showinfo("Update", "Failed to start Ollama server. Exiting now..."))
+            root.quit()
+
+    root.after(100, start_ollama_and_update)
+
+    root.mainloop()
+
+
 def main():
     tkinter()
-    
+
 
 if __name__ == "__main__":
     main()
