@@ -1,34 +1,32 @@
-from collections import defaultdict, Counter
-import random
+import customtkinter as ctk
+import tkinter.messagebox as messagebox
+import tkinter as tk
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import ctypes
 import requests
 from bs4 import BeautifulSoup
 import nltk
 from nltk.corpus import wordnet
 from nltk.wsd import lesk
-import urllib.parse
+import random
 import re
-from duckduckgo_search import DDGS
-import subprocess
-from concurrent.futures import ThreadPoolExecutor
 import time
 import atexit
-import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
-import threading
-import ctypes
-
-status_label = None
+import subprocess
+from collections import defaultdict, Counter
+from duckduckgo_search import DDGS
 
 try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(1) 
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
 except Exception:
     pass
 
+status_label = None
 
 def update_status(text):
     if status_label:
-        status_label.after(0, lambda: status_label.config(text=text))
-
+        status_label.after(0, lambda: status_label.configure(text=text))
 
 class OllamaServer:
     def __init__(self):
@@ -36,16 +34,13 @@ class OllamaServer:
 
     def start(self):
         if self.process is not None:
-            return True 
-
+            return True
         update_status("Starting Ollama server...")
-
         self.process = subprocess.Popen(
             ["ollama", "serve"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
-
         for _ in range(20):
             try:
                 r = requests.get("http://localhost:11434/api/tags", timeout=0.5)
@@ -63,9 +58,7 @@ class OllamaServer:
             self.process.terminate()
             self.process = None
 
-
 ollama = OllamaServer()
-
 atexit.register(ollama.stop)
 
 def make_coherent(text, model="phi3"):
@@ -223,47 +216,131 @@ def scrape_text(url):
 
 
 def tkinter():
+    
     global status_label
-    root = tk.Tk()
+
+    ctk.set_appearance_mode("light")
+    ctk.set_default_color_theme("blue")
+
+    root = ctk.CTk()
     root.title("Next-Gen Text Generator")
-    root.geometry("1500x1200")
+    root.geometry("900x700")
     root.configure(bg="#f0f0f0")
 
-    tk.Label(root, text="Enter search query:", font=("Segoe UI", 12)).pack(padx=10, pady=0, anchor="center")
-    keywords_text = tk.Text(root, height=4, width=80, font=("Segoe UI", 12))
+
+    class ToolTip:
+        def __init__(self, widget, text, delay=500):
+            self.widget = widget
+            self.text = text
+            self.delay = delay
+            self.tip_window = None
+            self.after_id = None
+
+            self.widget.bind("<Enter>", self.schedule)
+            self.widget.bind("<Leave>", self.hide_tip)
+
+        def schedule(self, event=None):
+            self.unschedule()
+            self.after_id = self.widget.after(self.delay, self.show_tip)
+
+        def unschedule(self):
+            if self.after_id:
+                self.widget.after_cancel(self.after_id)
+                self.after_id = None
+
+        def show_tip(self, event=None):
+            if self.tip_window:
+                return
+
+            x = self.widget.winfo_rootx() + self.widget.winfo_width() + 10
+            y = self.widget.winfo_rooty() + (self.widget.winfo_height() // 2)
+
+            self.tip_window = tw = tk.Toplevel(self.widget)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x}+{y}")
+
+            label = tk.Label(
+                tw,
+                text=self.text,
+                background="#333333",
+                foreground="white",
+                relief="solid",
+                borderwidth=1,
+                font=("Segoe UI", 10)
+            )
+            label.pack(ipadx=6, ipady=3)
+
+        def hide_tip(self, event=None):
+            self.unschedule()
+            if self.tip_window:
+                self.tip_window.destroy()
+                self.tip_window = None
+
+
+    def no(event):
+        return "break"
+
+    label_query = ctk.CTkLabel(root, text="Enter search query:", font=("Segoe UI Semilight", 18))
+    label_query.pack(padx=100, pady=(10, 0), anchor="center")
+
+    keywords_text = ctk.CTkTextbox(root, height=100, width=800, font=("Segoe UI Semilight", 18))
     keywords_text.pack(padx=10, pady=(0, 10))
 
-
-    params_frame = tk.Frame(root)
+    params_frame = ctk.CTkFrame(root)
     params_frame.pack(padx=200, pady=5, fill="x")
 
-    tk.Label(params_frame, text="State size:", font=("Segoe UI", 12), anchor="center").grid(row=0, column=0)
-    state_size_spin = tk.Spinbox(params_frame, from_=2, to=4, width=5, font=("Segoe UI", 12))
-    state_size_spin.grid(row=1, column=0, padx=100)
-    style = ttk.Style()
-    style.configure("TCombobox", font=("Segoe UI", 12))
+    label_state = ctk.CTkLabel(params_frame, text="State size:", font=("Segoe UI Semilight", 18))
+    label_state.grid(row=0, column=0, pady=(0, 5), sticky="we")
+    ToolTip(label_state, "Number of words in the Markov chain state.")
 
+    state_size_combo = ctk.CTkComboBox(params_frame, values=["2", "3", "4"], width=80, font=("Segoe UI Semilight", 18))
+    state_size_combo.grid(row=1, column=0, padx=10)
+    state_size_combo.set("2")
+    ToolTip(state_size_combo._entry, "Select the number of words per state.")
 
-    tk.Label(params_frame, text="Min words to generate:", font=("Segoe UI", 12)).grid(row=0, column=1, sticky="")
-    min_words_spin = tk.Spinbox(params_frame, from_=10, to=500, increment=10, width=7, font=("Segoe UI", 12))
-    min_words_spin.grid(row=1, column=1, sticky="", padx=200)
-    style = ttk.Style()
-    style.configure("TCombobox", font=("Segoe UI", 12))
+    label_min_words = ctk.CTkLabel(params_frame, text="Min words to generate:", font=("Segoe UI Semilight", 18))
+    label_min_words.grid(row=0, column=1, pady=(0, 5), sticky="we")
+    ToolTip(label_min_words, "Minimum number of words to output in generated text.")
 
-    tk.Label(params_frame, text="Model:", font = ("Segoe UI", 12)).grid(row=0, column=2, sticky="")
-    model_combo = ttk.Combobox(params_frame, values=["phi3", "phi3-mini"], state="readonly", width=10, font = ("Segoe UI", 12))
-    model_combo.current(0)
-    model_combo.grid(row=1, column=2, sticky="e")
-    style = ttk.Style()
-    style.configure("TCombobox", font=("Segoe UI", 12))
+    min_words_values = [str(i) for i in range(10, 510, 10)]
+    min_words_combo = ctk.CTkComboBox(params_frame, values=min_words_values, width=100, font=("Segoe UI Semilight", 18))
+    min_words_combo.grid(row=1, column=1, padx=10)
+    min_words_combo.set("50")
+    ToolTip(min_words_combo._entry, "Choose minimum output length.")
 
-    tk.Label(params_frame, text="Generated text:", font=("Segoe UI", 12), anchor="center").grid(row=2, column=1)
+    label_model = ctk.CTkLabel(params_frame, text="Model:", font=("Segoe UI Semilight", 18))
+    label_model.grid(row=0, column=2, pady=(0, 5), sticky="we")
+    ToolTip(label_model, "phi3 = larger, more time, better output.\nphi3-mini = smaller, faster, less coherent output.")
 
-    output_box = scrolledtext.ScrolledText(root, height=20, width=85)
-    output_box.pack(padx=10, pady=10, fill="both", expand=True)
+    model_combo = ctk.CTkComboBox(params_frame, values=["phi3", "phi3-mini"], width=120, font=("Segoe UI Semilight", 18))
+    model_combo.grid(row=1, column=2, padx=10)
+    model_combo.set("phi3")
+    model_combo._entry.bind("<Key>", no) 
+    ToolTip(model_combo._entry, "Select the model for text generation.")
 
-    status_label = ttk.Label(root, text="", font=("Segoe UI", 12, "italic"))
+    params_frame.columnconfigure((0, 1, 2), weight=1)
+
+    label_output = ctk.CTkLabel(params_frame, text="", font=("Segoe UI Semilight", 18))
+    label_output.grid(row=2, column=1, pady=(20, 0))
+
+    label_output = ctk.CTkLabel(root, text="Generated text:", font=("Segoe UI Semilight", 18))
+    label_output.pack(pady=(20, 0))
+
+    output_box = ctk.CTkTextbox(root, height=180, width=700, font=("Segoe UI Semilight", 18), wrap="word")
+    output_box.pack(padx=50, pady=10, fill="both", expand=True)
+
+    status_label = ctk.CTkLabel(root, text="", font=("Segoe UI Semilight", 18, "italic"))
     status_label.pack(pady=5)
+
+    generate_button = ctk.CTkButton(root, text="Generate", font=("Segoe UI Semilight", 18, "bold"))
+    generate_button.pack(pady=5)
+
+    copy_button = ctk.CTkButton(root, text="Copy text", font=("Segoe UI Semilight", 18, "bold"))
+    copy_button.pack(pady=20)
+
+    ToolTip(label_state, "Number of words in the Markov chain state.")
+    ToolTip(label_min_words, "Minimum number of words to generate in the output.")
+    ToolTip(model_combo, "Select the model for text generation.")
 
     def run_generation():
         keywords = keywords_text.get("1.0", "end").strip()
@@ -271,8 +348,8 @@ def tkinter():
             messagebox.showerror("Input Error", "Please enter a search query.")
             return
         try:
-            state_size = int(state_size_spin.get())
-            min_words = int(min_words_spin.get())
+            state_size = int(state_size_combo.get())
+            min_words = int(min_words_combo.get())
         except ValueError:
             messagebox.showerror("Input Error", "State size and min words must be numbers.")
             return
@@ -287,8 +364,7 @@ def tkinter():
             nonlocal dots, loading_job
             dots = (dots + 1) % 4
             update_status(text + "." * dots)
-            loading_job = root.after(500, lambda: animate_dots(text)) 
-
+            loading_job = root.after(500, lambda: animate_dots(text))
 
         def start_loading_animation(text):
             nonlocal dots
@@ -302,13 +378,12 @@ def tkinter():
                 loading_job = None
 
         def task():
-
             urls = search(keywords, num=5)
             if not urls:
                 root.after(0, lambda: messagebox.showerror("Input Error", "No search results found. Please regenerate."))
                 update_status("No search results found.")
                 return
-            
+
             root.after(0, lambda: start_loading_animation(f"Found {len(urls)} URLs. Scraping texts"))
 
             with ThreadPoolExecutor(max_workers=5) as executor:
@@ -339,8 +414,6 @@ def tkinter():
             final_text = make_coherent(new_text, model)
             root.after(0, stop_loading_animation)
 
-            final_text = (f"Generated text:\n{final_text}")
-
             def update_output():
                 output_box.insert("end", final_text + "\n")
                 update_status("Generation complete.")
@@ -351,32 +424,17 @@ def tkinter():
         threading.Thread(target=task).start()
 
     def copy():
-        text = output_box.get("1.0", tk.END).strip()
+        text = output_box.get("1.0", "end").strip()
         if text:
             root.clipboard_clear()
             root.clipboard_append(text)
             root.update()
-            update_status("Text copied.")
+            update_status("Text copied!")
         else:
             messagebox.showwarning("Empty", "No generated text to copy.")
 
-    generate_button = tk.Button(root, text="Generate", command=run_generation)
-    generate_button.pack(pady=5)
-
-    copy_button = tk.Button(root, text="Copy text", command=copy)
-    copy_button.pack(pady=5)
-
-    def enter(event):
-        event.widget.config(background="lightgray")
-
-    def leave(event):
-        event.widget.config(background="SystemButtonFace")
-
-    generate_button.bind("<Enter>", enter)
-    generate_button.bind("<Leave>", leave)
-
-    copy_button.bind("<Enter>", enter)
-    copy_button.bind("<Leave>", leave)
+    generate_button.configure(command=run_generation)
+    copy_button.configure(command=copy)
 
     def start_ollama_and_update():
         if not ollama.start():
@@ -384,13 +442,10 @@ def tkinter():
             root.quit()
 
     root.after(100, start_ollama_and_update)
-
     root.mainloop()
-
 
 def main():
     tkinter()
-
 
 if __name__ == "__main__":
     main()
