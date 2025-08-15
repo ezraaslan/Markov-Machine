@@ -341,6 +341,7 @@ def tkinter():
     ToolTip(label_state, "Number of words in the Markov chain state.")
     ToolTip(label_min_words, "Minimum number of words to generate in the output.")
     ToolTip(model_combo, "Select the model for text generation.")
+    ToolTip(label_query, "Enter a query to be searched on the DuckDuckGo engine.")
 
     def run_generation():
         keywords = keywords_text.get("1.0", "end").strip()
