@@ -78,7 +78,6 @@ def make_coherent(text, model="phi3"):
         update_status("Coherence model failed.")
         return text
 
-
 def pluralize(og, new):
     if og.lower() == "is":
         return new
@@ -93,7 +92,6 @@ def pluralize(og, new):
     if og.endswith("s"):
         return new + "s"
     return new
-
 
 def get_synonym(word, context_sentence, pos=None):
     synset = lesk(context_sentence, word, pos=pos)
@@ -310,9 +308,9 @@ def tkinter():
 
     label_model = ctk.CTkLabel(params_frame, text="Model:", font=("Segoe UI Semilight", 18))
     label_model.grid(row=0, column=2, pady=(0, 5), sticky="we")
-    ToolTip(label_model, "phi3 = larger, more time, better output.\nphi3-mini = smaller, faster, less coherent output.")
+    ToolTip(label_model, "phi3 = larger, more time, better output.\nphi3-mini = smaller, faster, less coherent output.\nChoose 'None' if Ollama is not downloaded a")
 
-    model_combo = ctk.CTkComboBox(params_frame, values=["phi3", "phi3-mini"], width=120, font=("Segoe UI Semilight", 18))
+    model_combo = ctk.CTkComboBox(params_frame, values=["phi3", "phi3-mini", "None"], width=120, font=("Segoe UI Semilight", 18))
     model_combo.grid(row=1, column=2, padx=10)
     model_combo.set("phi3")
     model_combo._entry.bind("<Key>", no) 
@@ -411,9 +409,15 @@ def tkinter():
             new_text = replace(generated.split(" "))
             root.after(0, stop_loading_animation)
 
-            root.after(0, lambda: start_loading_animation("Making text coherent with model"))
-            final_text = make_coherent(new_text, model)
-            root.after(0, stop_loading_animation)
+            if model != "None":
+                root.after(0, lambda: start_loading_animation("Making text coherent with model"))
+                final_text = make_coherent(new_text, model)
+                root.after(0, stop_loading_animation)
+            else:
+                final_text = new_text
+                root.after(0, lambda: start_loading_animation("Making text coherent with model"))
+                final_text = make_coherent(new_text, model)
+                root.after(0, stop_loading_animation)
 
             def update_output():
                 output_box.insert("end", final_text + "\n")
@@ -438,9 +442,10 @@ def tkinter():
     copy_button.configure(command=copy)
 
     def start_ollama_and_update():
-        if not ollama.start():
-            root.after(0, lambda: messagebox.showinfo("Update", "Failed to start Ollama server. Exiting now..."))
-            root.quit()
+        if model_combo.get() != "None":
+            if not ollama.start():
+                root.after(0, lambda: messagebox.showinfo("Update", "Failed to start Ollama server. Exiting now..."))
+                root.quit()
 
     root.after(100, start_ollama_and_update)
     root.mainloop()
