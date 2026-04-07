@@ -11,4 +11,5 @@ v2.0.0 UPDATE: This release DOES INCLUDE a coherence model, so the output is ver
 
 v3.0.0 UPDATE: This version boasts all of the same capabilities as the v2.0.0, except now it renders in a nice-looking window application for users' comfort and convinience. This latest version has fancy new GUI elements, including helpful tooltips that explain the under-the-hood process to users if needed.
 
+competiton update: did not win :(, but definitely learned a ton along the way! this project really jumpstarted my CS journey and I had a great time building it.
 v4.0.0 UPDATE: I have finished this project and submitted it to my state's 2025 Congressional App Challenge! At this stage, I consider the algorithm completed because it performs well to my standards and no blatant bugs exist in the code. However, since this was such an interesting project to work on, I expect to return to these files with new knowledge I learn in the future.
